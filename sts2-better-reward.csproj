@@ -4,8 +4,8 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>StartingEnergyMod</AssemblyName>
-    <RootNamespace>StartingEnergyMod</RootNamespace>
+    <AssemblyName>sts2-better-reward</AssemblyName>
+    <RootNamespace>Sts2BetterReward</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- 禁用架构不匹配警告 -->
     <NoWarn>$(NoWarn);MSB3270</NoWarn>

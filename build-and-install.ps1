@@ -1,7 +1,7 @@
 #Requires -Version 5.1
-# STS2 开局能量+1 Mod - PowerShell 一键构建安装脚本
+# STS2 sts2-better-reward Mod - PowerShell 一键构建安装脚本
 
-$MOD_NAME = "StartingEnergyMod"
+$MOD_NAME = "sts2-better-reward"
 $PROJECT_DIR = $PSScriptRoot
 $GAME_DIR = "E:\SteamLibrary\steamapps\common\Slay the Spire 2"
 $MODS_DIR = Join-Path $GAME_DIR "mods"
@@ -96,7 +96,7 @@ Write-Info "构建 Mod DLL..."
 Push-Location $PROJECT_DIR
 try {
     # 直接运行 dotnet build 并捕获输出
-    $buildOutput = dotnet build -c Release -p:GameDir="$GAME_DIR" 2>&1
+    $buildOutput = dotnet build -c Release -p:GameDirWin="$GAME_DIR" 2>&1
     $buildExitCode = $LASTEXITCODE
     if ($buildExitCode -ne 0) {
         Show-Result $false @(
@@ -180,6 +180,6 @@ Show-Result $true @(
     "下一步:",
     "  1. 启动 Slay the Spire 2",
     "  2. 主菜单点击 Mods",
-    "  3. 找到 开局能量+1 并启用",
-    "  4. 开始游戏，享受 4 点初始能量！"
+    "  3. 找到 sts2-better-reward 并启用",
+    "  4. 开始游戏，享受最大能量 +1 和精英/Boss 随机额外奖励！"
 )

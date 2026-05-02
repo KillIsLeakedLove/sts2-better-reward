@@ -1,186 +1,247 @@
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.CardSelection;
+using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes.CommonUi;
+using MegaCrit.Sts2.Core.Rewards;
+using MegaCrit.Sts2.Core.Rooms;
+using MegaCrit.Sts2.Core.Runs;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 
-namespace StartingEnergyMod;
+namespace Sts2BetterReward;
 
-/// <summary>
-/// Mod 主入口类
-/// 使用 [ModInitializer] 标记初始化方法
-/// </summary>
 [ModInitializer(nameof(Initialize))]
 public partial class MainFile : Node
 {
-    public const string ModId = "StartingEnergyMod";
+    public const string ModId = "sts2-better-reward";
 
-    /// <summary>
-    /// Mod 初始化方法，由 STS2 加载器自动调用
-    /// </summary>
     public static void Initialize()
     {
         var harmony = new Harmony(ModId);
         harmony.PatchAll(Assembly.GetExecutingAssembly());
-        GD.Print($"[{ModId}] 开局能量+1 Mod 已加载");
+        GD.Print($"[{ModId}] sts2-better-reward Mod 已加载");
     }
 }
 
-/// <summary>
-/// Harmony 补丁：修改玩家初始能量
-/// 目标：CombatManager.SetUpCombat 或 StartCombatInternal 完成后将能量从 3 增加到 4
-/// </summary>
 [HarmonyPatch]
-public static class StartingEnergyPatch
+public static class StartingEnergyBonusPatch
 {
-    /// <summary>
-    /// 动态查找 CombatManager 中初始化战斗的方法
-    /// </summary>
     static MethodBase? TargetMethod()
     {
-        // 使用完整命名空间查找 CombatManager
-        var combatManagerType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Combat.CombatManager")
-            ?? AccessTools.TypeByName("CombatManager");
-
-        if (combatManagerType == null)
+        var hookType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Hooks.Hook");
+        if (hookType == null)
         {
-            GD.PrintErr($"[{MainFile.ModId}] 找不到 CombatManager 类型");
+            GD.PrintErr($"[{MainFile.ModId}] 找不到 Hook 类型");
             return null;
         }
 
-        GD.Print($"[{MainFile.ModId}] 找到类型: {combatManagerType.FullName}");
-
-        // 尝试 SetUpCombat 方法（设置战斗的方法）
-        var method = AccessTools.Method(combatManagerType, "SetUpCombat");
-        if (method != null)
+        var combatStateType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Combat.CombatState");
+        var playerType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Entities.Players.Player");
+        if (combatStateType == null || playerType == null)
         {
-            GD.Print($"[{MainFile.ModId}] 找到目标方法: SetUpCombat");
-            return method;
+            GD.PrintErr($"[{MainFile.ModId}] 找不到 CombatState 或 Player 类型");
+            return null;
         }
 
-        // 备选：StartCombatInternal
-        method = AccessTools.Method(combatManagerType, "StartCombatInternal");
-        if (method != null)
+        var method = AccessTools.Method(hookType, "ModifyMaxEnergy", new[] { combatStateType, playerType, typeof(decimal) });
+        if (method == null)
         {
-            GD.Print($"[{MainFile.ModId}] 找到目标方法: StartCombatInternal");
-            return method;
+            GD.PrintErr($"[{MainFile.ModId}] 找不到 Hook.ModifyMaxEnergy 方法");
+            return null;
         }
 
-        // 备选：StartCombat
-        method = AccessTools.Method(combatManagerType, "StartCombat");
-        if (method != null)
-        {
-            GD.Print($"[{MainFile.ModId}] 找到目标方法: StartCombat");
-            return method;
-        }
-
-        GD.PrintErr($"[{MainFile.ModId}] 警告：未能找到 CombatManager 的战斗初始化方法");
-        return null;
+        GD.Print($"[{MainFile.ModId}] 已补丁 Hook.ModifyMaxEnergy");
+        return method;
     }
 
-    /// <summary>
-    /// 后置补丁：战斗初始化完成后修改玩家能量
-    /// </summary>
-    static void Postfix(object __instance)
+    static void Postfix(ref decimal __result)
     {
-        if (__instance == null) return;
+        __result += 1m;
+    }
+}
 
-        try
+[HarmonyPatch]
+public static class ExtraRewardOptionsPatch
+{
+    private static readonly Random Random = new();
+
+    static MethodBase? TargetMethod()
+    {
+        var hookType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Hooks.Hook");
+        if (hookType == null)
         {
-            var combatManagerType = __instance.GetType();
-
-            // CombatManager 中玩家状态可能通过 PlayerState 属性访问
-            // 尝试获取 playerState 或 player 字段/属性
-            object? playerState = GetPlayerState(__instance, combatManagerType);
-
-            if (playerState != null)
-            {
-                ModifyPlayerEnergy(playerState);
-            }
-            else
-            {
-                GD.PrintErr($"[{MainFile.ModId}] 无法获取玩家状态");
-            }
+            GD.PrintErr($"[{MainFile.ModId}] 找不到 Hook 类型");
+            return null;
         }
-        catch (System.Exception ex)
+
+        var runStateType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Runs.IRunState");
+        if (runStateType == null)
         {
-            GD.PrintErr($"[{MainFile.ModId}] 能量修改失败: {ex.Message}");
+            GD.PrintErr($"[{MainFile.ModId}] 找不到 IRunState 类型");
+            return null;
+        }
+
+        var method = AccessTools.Method(hookType, "ModifyRewards", new[] { runStateType, typeof(Player), typeof(List<Reward>), typeof(AbstractRoom) });
+        if (method == null)
+        {
+            GD.PrintErr($"[{MainFile.ModId}] 找不到 Hook.ModifyRewards 方法");
+            return null;
+        }
+
+        GD.Print($"[{MainFile.ModId}] 已补丁 Hook.ModifyRewards");
+        return method;
+    }
+
+    static void Prefix(IRunState runState, Player player, List<Reward> rewards, AbstractRoom room)
+    {
+        if (room.RoomType != RoomType.Elite && room.RoomType != RoomType.Boss)
+        {
+            return;
+        }
+
+        rewards.Add(CreateRandomExtraReward(runState, player));
+        GD.Print($"[{MainFile.ModId}] {GetRoomName(room.RoomType)}奖励已追加 1 个额外奖励选项");
+    }
+
+    private static Reward CreateRandomExtraReward(IRunState runState, Player player)
+    {
+        return Random.Next(5) switch
+        {
+            0 => new RelicReward(player),
+            1 => new GoldReward(100, player, false),
+            2 => new UpgradeCardsReward(player),
+            3 => new RemoveCardReward(runState, player),
+            _ => new MaxHpReward(player),
+        };
+    }
+
+    private static CardSelectorPrefs CreateSelectorPrefs(string prompt)
+    {
+        return new CardSelectorPrefs(new LocString("card_selection", prompt), 1, 1)
+        {
+            Cancelable = true
+        };
+    }
+
+    private static string GetRoomName(RoomType roomType)
+    {
+        return roomType == RoomType.Elite ? "精英" : "Boss";
+    }
+
+    private sealed class UpgradeCardsReward : Reward
+    {
+        public UpgradeCardsReward(Player player) : base(player)
+        {
+        }
+
+        protected override RewardType RewardType => RewardType.SpecialCard;
+
+        public override int RewardsSetIndex => 0;
+
+        public override LocString Description => new LocString("card_reward", "选择一张卡牌升级");
+
+        public override bool IsPopulated => true;
+
+        public override Task Populate()
+        {
+            return Task.CompletedTask;
+        }
+
+        protected override async Task<bool> OnSelect()
+        {
+            var selectedCard = (await CardSelectCmd.FromDeckForUpgrade(Player, CreateSelectorPrefs("选择一张卡牌升级"))).FirstOrDefault();
+            if (selectedCard == null)
+            {
+                return false;
+            }
+
+            CardCmd.Upgrade(selectedCard, CardPreviewStyle.EventLayout);
+            return true;
+        }
+
+        public override void MarkContentAsSeen()
+        {
         }
     }
 
-    /// <summary>
-    /// 从 CombatManager 获取玩家状态对象
-    /// </summary>
-    private static object? GetPlayerState(object instance, System.Type type)
+    private sealed class RemoveCardReward : Reward
     {
-        // 尝试常见字段名
-        string[] fieldNames = { "playerState", "_playerState", "player", "_player", "PlayerState", "Player" };
-        foreach (var name in fieldNames)
+        private readonly IRunState runState;
+
+        public RemoveCardReward(IRunState runState, Player player) : base(player)
         {
-            var field = AccessTools.Field(type, name);
-            if (field != null)
-            {
-                var value = field.GetValue(instance);
-                if (value != null) return value;
-            }
+            this.runState = runState;
         }
 
-        // 尝试常见属性名
-        string[] propNames = { "PlayerState", "Player", "playerState", "player" };
-        foreach (var name in propNames)
+        protected override RewardType RewardType => RewardType.RemoveCard;
+
+        public override int RewardsSetIndex => 0;
+
+        public override LocString Description => new LocString("card_reward", "选择一张卡牌移除");
+
+        public override bool IsPopulated => true;
+
+        public override Task Populate()
         {
-            var prop = AccessTools.Property(type, name);
-            if (prop != null && prop.CanRead)
-            {
-                var value = prop.GetValue(instance);
-                if (value != null) return value;
-            }
+            return Task.CompletedTask;
         }
 
-        return null;
+        protected override async Task<bool> OnSelect()
+        {
+            var selectedCard = (await CardSelectCmd.FromDeckForRemoval(Player, CreateSelectorPrefs("选择一张卡牌移除"), _ => true)).FirstOrDefault();
+            if (selectedCard == null)
+            {
+                return false;
+            }
+
+            if (runState is not RunState concreteRunState)
+            {
+                return false;
+            }
+
+            concreteRunState.RemoveCard(selectedCard);
+            return true;
+        }
+
+        public override void MarkContentAsSeen()
+        {
+        }
     }
 
-    /// <summary>
-    /// 修改玩家能量：如果当前是默认值 3，则增加到 4
-    /// </summary>
-    private static void ModifyPlayerEnergy(object playerState)
+    private sealed class MaxHpReward : Reward
     {
-        var playerType = playerState.GetType();
-
-        // 尝试 Energy 属性（最常见的能量属性名）
-        var energyProp = AccessTools.Property(playerType, "Energy")
-            ?? AccessTools.Property(playerType, "energy")
-            ?? AccessTools.Property(playerType, "CurrentEnergy")
-            ?? AccessTools.Property(playerType, "currentEnergy");
-
-        if (energyProp != null && energyProp.CanRead && energyProp.CanWrite)
+        public MaxHpReward(Player player) : base(player)
         {
-            var currentEnergy = (int)energyProp.GetValue(playerState)!;
-            if (currentEnergy == 3)
-            {
-                energyProp.SetValue(playerState, 4);
-                GD.Print($"[{MainFile.ModId}] 能量已修改: 3 -> 4");
-            }
         }
-        else
-        {
-            // 尝试直接修改字段
-            var energyField = AccessTools.Field(playerType, "energy")
-                ?? AccessTools.Field(playerType, "_energy")
-                ?? AccessTools.Field(playerType, "Energy");
 
-            if (energyField != null)
-            {
-                var currentEnergy = (int)energyField.GetValue(playerState)!;
-                if (currentEnergy == 3)
-                {
-                    energyField.SetValue(playerState, 4);
-                    GD.Print($"[{MainFile.ModId}] 能量字段已修改: 3 -> 4");
-                }
-            }
-            else
-            {
-                GD.PrintErr($"[{MainFile.ModId}] 无法找到玩家能量字段/属性");
-            }
+        protected override RewardType RewardType => RewardType.None;
+
+        public override int RewardsSetIndex => 0;
+
+        public override LocString Description => new LocString("card_reward", "生命上限 +6");
+
+        public override bool IsPopulated => true;
+
+        public override Task Populate()
+        {
+            return Task.CompletedTask;
+        }
+
+        protected override async Task<bool> OnSelect()
+        {
+            await CreatureCmd.GainMaxHp(Player.Creature, 6m);
+            return true;
+        }
+
+        public override void MarkContentAsSeen()
+        {
         }
     }
 }
