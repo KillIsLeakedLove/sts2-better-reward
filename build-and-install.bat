@@ -58,16 +58,42 @@ if errorlevel 1 (
 )
 
 :: 复制文件到游戏目录
-echo [5/5] 安装 Mod 到游戏...
-copy /Y "%PROJECT_DIR%\bin\Release\net9.0\%MOD_NAME%.dll" "%MODS_DIR%\%MOD_NAME%.dll" >nul
-copy /Y "%PROJECT_DIR%\%MOD_NAME%.json" "%MODS_DIR%\%MOD_NAME%.json" >nul
+echo [5/5] 安装 Mod 到游戏目录...
+echo.
+echo 源文件:
+echo   %PROJECT_DIR%bin\Release\net9.0\%MOD_NAME%.dll
+echo   %PROJECT_DIR%%MOD_NAME%.json
+echo.
+echo 目标目录: %MODS_DIR%
+echo.
+
+copy /Y "%PROJECT_DIR%bin\Release\net9.0\%MOD_NAME%.dll" "%MODS_DIR%\%MOD_NAME%.dll"
+if errorlevel 1 (
+    echo [错误] 复制 DLL 失败！
+    pause
+    exit /b 1
+)
+
+copy /Y "%PROJECT_DIR%%MOD_NAME%.json" "%MODS_DIR%\%MOD_NAME%.json"
+if errorlevel 1 (
+    echo [错误] 复制 JSON 失败！
+    pause
+    exit /b 1
+)
 
 echo.
-echo === 构建安装完成！===
-echo Mod 文件已复制到:
+echo ==========================================
+echo    构建 + 安装 全部完成！
+echo ==========================================
+echo.
+echo Mod 文件已成功安装到:
 echo   %MODS_DIR%\%MOD_NAME%.dll
 echo   %MODS_DIR%\%MOD_NAME%.json
 echo.
-echo 现在启动游戏，在 Mod 菜单中启用 "%MOD_NAME%"
+echo 下一步:
+echo   1. 启动 Slay the Spire 2
+echo   2. 在主菜单点击 "Mods"
+echo   3. 找到 "开局能量+1" 并启用
+echo   4. 开始游戏，享受 4 点初始能量！
 echo.
 pause
