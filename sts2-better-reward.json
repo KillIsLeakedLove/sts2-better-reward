@@ -2,7 +2,7 @@
   "id": "sts2-better-reward",
   "name": "Better Reward",
   "author": "STS2 Modder",
-  "description": "所有角色战斗最大能量额外+1，击败精英和Boss后额外随机获得1个奖励选项：遗物、100金币、卡牌升级、卡牌移除或生命上限+6。",
+  "description": "所有角色战斗最大能量额外+1，击败精英和Boss后额外获得1个稳定的随机奖励选项：遗物、100金币或卡牌移除。",
   "version": "v1.0.0",
   "has_pck": false,
   "has_dll": true,

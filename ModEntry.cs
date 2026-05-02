@@ -1,19 +1,13 @@
 using Godot;
 using HarmonyLib;
-using MegaCrit.Sts2.Core.CardSelection;
-using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Players;
-using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Modding;
-using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Rewards;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
-using System.Threading.Tasks;
 
 namespace Sts2BetterReward;
 
@@ -70,7 +64,7 @@ public static class StartingEnergyBonusPatch
 [HarmonyPatch]
 public static class ExtraRewardOptionsPatch
 {
-    private static readonly Random Random = new();
+    private const int ExtraRewardKindCount = 3;
 
     static MethodBase? TargetMethod()
     {
@@ -106,142 +100,62 @@ public static class ExtraRewardOptionsPatch
             return;
         }
 
-        rewards.Add(CreateRandomExtraReward(runState, player));
+        rewards.Add(CreateExtraReward(runState, player, room));
         GD.Print($"[{MainFile.ModId}] {GetRoomName(room.RoomType)}奖励已追加 1 个额外奖励选项");
     }
 
-    private static Reward CreateRandomExtraReward(IRunState runState, Player player)
+    private static Reward CreateExtraReward(IRunState runState, Player player, AbstractRoom room)
     {
-        return Random.Next(5) switch
+        return GetStableRewardKind(runState, room) switch
         {
             0 => new RelicReward(player),
             1 => new GoldReward(100, player, false),
-            2 => new UpgradeCardsReward(player),
-            3 => new RemoveCardReward(runState, player),
-            _ => new MaxHpReward(player),
+            _ => new CardRemovalReward(player),
         };
     }
 
-    private static CardSelectorPrefs CreateSelectorPrefs(string prompt)
+    private static int GetStableRewardKind(IRunState runState, AbstractRoom room)
     {
-        return new CardSelectorPrefs(new LocString("card_selection", prompt), 1, 1)
+        var hash = 2166136261u;
+        hash = AddHash(hash, MainFile.ModId);
+        hash = AddHash(hash, runState.Rng.Seed);
+        hash = AddHash(hash, runState.CurrentActIndex);
+        hash = AddHash(hash, runState.TotalFloor);
+        hash = AddHash(hash, runState.CurrentRoomCount);
+        hash = AddHash(hash, room.Id ?? 0);
+        hash = AddHash(hash, (int)room.RoomType);
+
+        return (int)(hash % ExtraRewardKindCount);
+    }
+
+    private static uint AddHash(uint hash, string value)
+    {
+        foreach (var character in value)
         {
-            Cancelable = true
-        };
+            hash ^= character;
+            hash *= 16777619u;
+        }
+
+        return hash;
+    }
+
+    private static uint AddHash(uint hash, int value)
+    {
+        unchecked
+        {
+            hash ^= (uint)value;
+            return hash * 16777619u;
+        }
+    }
+
+    private static uint AddHash(uint hash, uint value)
+    {
+        hash ^= value;
+        return hash * 16777619u;
     }
 
     private static string GetRoomName(RoomType roomType)
     {
         return roomType == RoomType.Elite ? "精英" : "Boss";
-    }
-
-    private sealed class UpgradeCardsReward : Reward
-    {
-        public UpgradeCardsReward(Player player) : base(player)
-        {
-        }
-
-        protected override RewardType RewardType => RewardType.SpecialCard;
-
-        public override int RewardsSetIndex => 0;
-
-        public override LocString Description => new LocString("card_reward", "选择一张卡牌升级");
-
-        public override bool IsPopulated => true;
-
-        public override Task Populate()
-        {
-            return Task.CompletedTask;
-        }
-
-        protected override async Task<bool> OnSelect()
-        {
-            var selectedCard = (await CardSelectCmd.FromDeckForUpgrade(Player, CreateSelectorPrefs("选择一张卡牌升级"))).FirstOrDefault();
-            if (selectedCard == null)
-            {
-                return false;
-            }
-
-            CardCmd.Upgrade(selectedCard, CardPreviewStyle.EventLayout);
-            return true;
-        }
-
-        public override void MarkContentAsSeen()
-        {
-        }
-    }
-
-    private sealed class RemoveCardReward : Reward
-    {
-        private readonly IRunState runState;
-
-        public RemoveCardReward(IRunState runState, Player player) : base(player)
-        {
-            this.runState = runState;
-        }
-
-        protected override RewardType RewardType => RewardType.RemoveCard;
-
-        public override int RewardsSetIndex => 0;
-
-        public override LocString Description => new LocString("card_reward", "选择一张卡牌移除");
-
-        public override bool IsPopulated => true;
-
-        public override Task Populate()
-        {
-            return Task.CompletedTask;
-        }
-
-        protected override async Task<bool> OnSelect()
-        {
-            var selectedCard = (await CardSelectCmd.FromDeckForRemoval(Player, CreateSelectorPrefs("选择一张卡牌移除"), _ => true)).FirstOrDefault();
-            if (selectedCard == null)
-            {
-                return false;
-            }
-
-            if (runState is not RunState concreteRunState)
-            {
-                return false;
-            }
-
-            concreteRunState.RemoveCard(selectedCard);
-            return true;
-        }
-
-        public override void MarkContentAsSeen()
-        {
-        }
-    }
-
-    private sealed class MaxHpReward : Reward
-    {
-        public MaxHpReward(Player player) : base(player)
-        {
-        }
-
-        protected override RewardType RewardType => RewardType.None;
-
-        public override int RewardsSetIndex => 0;
-
-        public override LocString Description => new LocString("card_reward", "生命上限 +6");
-
-        public override bool IsPopulated => true;
-
-        public override Task Populate()
-        {
-            return Task.CompletedTask;
-        }
-
-        protected override async Task<bool> OnSelect()
-        {
-            await CreatureCmd.GainMaxHp(Player.Creature, 6m);
-            return true;
-        }
-
-        public override void MarkContentAsSeen()
-        {
-        }
     }
 }
