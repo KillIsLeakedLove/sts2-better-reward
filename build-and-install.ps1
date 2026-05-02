@@ -86,14 +86,15 @@ if (-not (Test-Path $MODS_DIR)) {
 # 构建项目
 Write-Info "构建 Mod DLL..."
 Push-Location $PROJECT_DIR
-$buildLog = Join-Path $env:TEMP "sts2_build.log"
 try {
-    $proc = Start-Process -FilePath "dotnet" -ArgumentList "build", "-c", "Release", "-p:GameDir=$GAME_DIR" -RedirectStandardOutput $buildLog -RedirectStandardError $buildLog -Wait -PassThru -NoNewWindow
-    if ($proc.ExitCode -ne 0) {
+    # 直接运行 dotnet build 并捕获输出
+    $buildOutput = dotnet build -c Release -p:GameDir="$GAME_DIR" 2>&1
+    $buildExitCode = $LASTEXITCODE
+    if ($buildExitCode -ne 0) {
         Show-Result $false @(
-            "[X] 构建失败",
-            "    错误日志:",
-            "    $(Get-Content $buildLog | Select-Object -First 20)"
+            "[X] 构建失败 (退出码: $buildExitCode)",
+            "    输出:",
+            "    $buildOutput"
         )
     }
 } catch {
