@@ -7,7 +7,6 @@ namespace StartingEnergyMod;
 
 /// <summary>
 /// Mod 主入口类
-/// 继承 Node 以兼容 Godot 生命周期
 /// 使用 [ModInitializer] 标记初始化方法
 /// </summary>
 [ModInitializer(nameof(Initialize))]
@@ -28,36 +27,53 @@ public partial class MainFile : Node
 
 /// <summary>
 /// Harmony 补丁：修改玩家初始能量
-/// 目标：战斗开始时将能量从默认的 3 增加到 4
+/// 目标：CombatManager.SetUpCombat 或 StartCombatInternal 完成后将能量从 3 增加到 4
 /// </summary>
 [HarmonyPatch]
 public static class StartingEnergyPatch
 {
     /// <summary>
-    /// 动态查找 CombatState 中初始化战斗的方法
+    /// 动态查找 CombatManager 中初始化战斗的方法
     /// </summary>
     static MethodBase? TargetMethod()
     {
-        var combatStateType = AccessTools.TypeByName("CombatState");
-        if (combatStateType == null)
+        // 使用完整命名空间查找 CombatManager
+        var combatManagerType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Combat.CombatManager")
+            ?? AccessTools.TypeByName("CombatManager");
+
+        if (combatManagerType == null)
         {
-            GD.PrintErr($"[{MainFile.ModId}] 找不到 CombatState 类型");
+            GD.PrintErr($"[{MainFile.ModId}] 找不到 CombatManager 类型");
             return null;
         }
 
-        // 尝试常见的战斗初始化方法名
-        string[] methodNames = { "StartCombat", "EnterCombat", "BeginCombat", "InitializeCombat" };
-        foreach (var name in methodNames)
+        GD.Print($"[{MainFile.ModId}] 找到类型: {combatManagerType.FullName}");
+
+        // 尝试 SetUpCombat 方法（设置战斗的方法）
+        var method = AccessTools.Method(combatManagerType, "SetUpCombat");
+        if (method != null)
         {
-            var method = AccessTools.Method(combatStateType, name);
-            if (method != null)
-            {
-                GD.Print($"[{MainFile.ModId}] 找到目标方法: {method.Name}");
-                return method;
-            }
+            GD.Print($"[{MainFile.ModId}] 找到目标方法: SetUpCombat");
+            return method;
         }
 
-        GD.PrintErr($"[{MainFile.ModId}] 警告：未能找到 CombatState 的战斗初始化方法");
+        // 备选：StartCombatInternal
+        method = AccessTools.Method(combatManagerType, "StartCombatInternal");
+        if (method != null)
+        {
+            GD.Print($"[{MainFile.ModId}] 找到目标方法: StartCombatInternal");
+            return method;
+        }
+
+        // 备选：StartCombat
+        method = AccessTools.Method(combatManagerType, "StartCombat");
+        if (method != null)
+        {
+            GD.Print($"[{MainFile.ModId}] 找到目标方法: StartCombat");
+            return method;
+        }
+
+        GD.PrintErr($"[{MainFile.ModId}] 警告：未能找到 CombatManager 的战斗初始化方法");
         return null;
     }
 
@@ -70,29 +86,19 @@ public static class StartingEnergyPatch
 
         try
         {
-            var combatStateType = __instance.GetType();
+            var combatManagerType = __instance.GetType();
 
-            // 获取 player 字段
-            object? player = null;
-            var playerField = AccessTools.Field(combatStateType, "player")
-                ?? AccessTools.Field(combatStateType, "_player")
-                ?? AccessTools.Field(combatStateType, "Player");
+            // CombatManager 中玩家状态可能通过 PlayerState 属性访问
+            // 尝试获取 playerState 或 player 字段/属性
+            object? playerState = GetPlayerState(__instance, combatManagerType);
 
-            if (playerField != null)
-                player = playerField.GetValue(__instance);
-
-            if (player == null)
+            if (playerState != null)
             {
-                // 尝试通过属性获取
-                var playerProp = AccessTools.Property(combatStateType, "Player")
-                    ?? AccessTools.Property(combatStateType, "player");
-                if (playerProp != null)
-                    player = playerProp.GetValue(__instance);
+                ModifyPlayerEnergy(playerState);
             }
-
-            if (player != null)
+            else
             {
-                ModifyPlayerEnergy(player);
+                GD.PrintErr($"[{MainFile.ModId}] 无法获取玩家状态");
             }
         }
         catch (System.Exception ex)
@@ -102,13 +108,45 @@ public static class StartingEnergyPatch
     }
 
     /// <summary>
+    /// 从 CombatManager 获取玩家状态对象
+    /// </summary>
+    private static object? GetPlayerState(object instance, System.Type type)
+    {
+        // 尝试常见字段名
+        string[] fieldNames = { "playerState", "_playerState", "player", "_player", "PlayerState", "Player" };
+        foreach (var name in fieldNames)
+        {
+            var field = AccessTools.Field(type, name);
+            if (field != null)
+            {
+                var value = field.GetValue(instance);
+                if (value != null) return value;
+            }
+        }
+
+        // 尝试常见属性名
+        string[] propNames = { "PlayerState", "Player", "playerState", "player" };
+        foreach (var name in propNames)
+        {
+            var prop = AccessTools.Property(type, name);
+            if (prop != null && prop.CanRead)
+            {
+                var value = prop.GetValue(instance);
+                if (value != null) return value;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// 修改玩家能量：如果当前是默认值 3，则增加到 4
     /// </summary>
-    private static void ModifyPlayerEnergy(object player)
+    private static void ModifyPlayerEnergy(object playerState)
     {
-        var playerType = player.GetType();
+        var playerType = playerState.GetType();
 
-        // 尝试 Energy 属性
+        // 尝试 Energy 属性（最常见的能量属性名）
         var energyProp = AccessTools.Property(playerType, "Energy")
             ?? AccessTools.Property(playerType, "energy")
             ?? AccessTools.Property(playerType, "CurrentEnergy")
@@ -116,10 +154,10 @@ public static class StartingEnergyPatch
 
         if (energyProp != null && energyProp.CanRead && energyProp.CanWrite)
         {
-            var currentEnergy = (int)energyProp.GetValue(player)!;
+            var currentEnergy = (int)energyProp.GetValue(playerState)!;
             if (currentEnergy == 3)
             {
-                energyProp.SetValue(player, 4);
+                energyProp.SetValue(playerState, 4);
                 GD.Print($"[{MainFile.ModId}] 能量已修改: 3 -> 4");
             }
         }
@@ -132,77 +170,17 @@ public static class StartingEnergyPatch
 
             if (energyField != null)
             {
-                var currentEnergy = (int)energyField.GetValue(player)!;
+                var currentEnergy = (int)energyField.GetValue(playerState)!;
                 if (currentEnergy == 3)
                 {
-                    energyField.SetValue(player, 4);
+                    energyField.SetValue(playerState, 4);
                     GD.Print($"[{MainFile.ModId}] 能量字段已修改: 3 -> 4");
                 }
             }
-        }
-    }
-}
-
-/// <summary>
-/// 备用补丁：回合开始时增加能量（如果主补丁未生效）
-/// </summary>
-[HarmonyPatch]
-public static class TurnStartEnergyPatch
-{
-    static MethodBase? TargetMethod()
-    {
-        var combatStateType = AccessTools.TypeByName("CombatState");
-        if (combatStateType == null) return null;
-
-        string[] methodNames = { "StartTurn", "BeginTurn", "OnTurnStart" };
-        foreach (var name in methodNames)
-        {
-            var method = AccessTools.Method(combatStateType, name);
-            if (method != null) return method;
-        }
-
-        return null;
-    }
-
-    static void Postfix(object __instance)
-    {
-        try
-        {
-            var combatStateType = __instance.GetType();
-
-            // 检查是否是第一回合
-            var turnField = AccessTools.Field(combatStateType, "turn")
-                ?? AccessTools.Field(combatStateType, "_turn")
-                ?? AccessTools.Field(combatStateType, "currentTurn");
-
-            var turn = turnField != null ? (int)turnField.GetValue(__instance)! : 0;
-
-            // 只在第一回合增加能量
-            if (turn <= 1)
+            else
             {
-                var playerField = AccessTools.Field(combatStateType, "player")
-                    ?? AccessTools.Field(combatStateType, "_player");
-
-                var player = playerField?.GetValue(__instance);
-                if (player != null)
-                {
-                    var playerType = player.GetType();
-                    var energyProp = AccessTools.Property(playerType, "Energy")
-                        ?? AccessTools.Property(playerType, "energy")
-                        ?? AccessTools.Property(playerType, "CurrentEnergy");
-
-                    if (energyProp != null && energyProp.CanWrite)
-                    {
-                        var current = (int)energyProp.GetValue(player)!;
-                        if (current == 3)
-                        {
-                            energyProp.SetValue(player, 4);
-                            GD.Print($"[{MainFile.ModId}] 第一回合能量已修改: 3 -> 4");
-                        }
-                    }
-                }
+                GD.PrintErr($"[{MainFile.ModId}] 无法找到玩家能量字段/属性");
             }
         }
-        catch { /* 静默处理 */ }
     }
 }
