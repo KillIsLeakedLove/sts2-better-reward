@@ -1,0 +1,20 @@
+# .NET 构建输出
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.cache
+
+# 但保留构建脚本输出的 build/mods/ 中的文件
+!build/mods/**/*.dll
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# 临时文件
+*.tmp
+*.log
