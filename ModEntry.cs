@@ -1,13 +1,22 @@
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.CardSelection;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Rewards;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Saves.Runs;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
+using Sts2Rng = MegaCrit.Sts2.Core.Random.Rng;
 
 namespace Sts2BetterReward;
 
@@ -64,7 +73,11 @@ public static class StartingEnergyBonusPatch
 [HarmonyPatch]
 public static class ExtraRewardOptionsPatch
 {
-    private const int ExtraRewardKindCount = 3;
+    private const int ExtraRewardKindCount = 5;
+    private const int GoldAmount = 100;
+    private const int MaxHpAmount = 6;
+    private static readonly ModelId UpgradeCardRewardSaveId = new(ModEntry.ModId, "upgrade_card");
+    private static readonly ModelId MaxHpRewardSaveId = new(ModEntry.ModId, "max_hp");
 
     static MethodBase? TargetMethod()
     {
@@ -111,15 +124,30 @@ public static class ExtraRewardOptionsPatch
 
     private static Reward CreateExtraReward(IRunState runState, Player player, AbstractRoom room)
     {
-        return GetStableRewardKind(runState, room) switch
+        var rewardRng = CreateRewardRng(runState, room);
+        return rewardRng.NextInt(ExtraRewardKindCount) switch
         {
-            0 => new RelicReward(player),
-            1 => new GoldReward(100, player, false),
-            _ => new CardRemovalReward(player),
+            0 => new GoldReward(GoldAmount, player, false),
+            1 => CreateRelicReward(player, rewardRng),
+            2 => new CardRemovalReward(player),
+            3 => new UpgradeCardReward(player),
+            _ => new MaxHpReward(player),
         };
     }
 
-    private static int GetStableRewardKind(IRunState runState, AbstractRoom room)
+    private static Reward CreateRelicReward(Player player, Sts2Rng rewardRng)
+    {
+        var relic = MegaCrit.Sts2.Core.Factories.RelicFactory.PullNextRelicFromFront(player, rewardRng).ToMutable();
+        return new RelicReward(relic, player);
+    }
+
+    private static Sts2Rng CreateRewardRng(IRunState runState, AbstractRoom room)
+    {
+        var seed = GetStableRewardSeed(runState, room);
+        return new Sts2Rng(seed, $"{ModEntry.ModId}:extra-reward");
+    }
+
+    private static uint GetStableRewardSeed(IRunState runState, AbstractRoom room)
     {
         var hash = 2166136261u;
         hash = AddHash(hash, ModEntry.ModId);
@@ -130,7 +158,7 @@ public static class ExtraRewardOptionsPatch
         hash = AddHash(hash, room.Id ?? 0);
         hash = AddHash(hash, (int)room.RoomType);
 
-        return (int)(hash % ExtraRewardKindCount);
+        return hash;
     }
 
     private static uint AddHash(uint hash, string value)
@@ -162,5 +190,124 @@ public static class ExtraRewardOptionsPatch
     private static string GetRoomName(RoomType roomType)
     {
         return roomType == RoomType.Elite ? "精英" : "Boss";
+    }
+
+    public static bool TryDeserializeExtraReward(SerializableReward save, Player player, out Reward reward)
+    {
+        reward = null!;
+
+        if (save.PredeterminedModelId == UpgradeCardRewardSaveId)
+        {
+            reward = new UpgradeCardReward(player);
+            return true;
+        }
+
+        if (save.PredeterminedModelId == MaxHpRewardSaveId)
+        {
+            reward = new MaxHpReward(player);
+            return true;
+        }
+
+        return false;
+    }
+
+    private sealed class UpgradeCardReward(Player player) : Reward(player)
+    {
+        protected override RewardType RewardType => RewardType.None;
+        public override int RewardsSetIndex => 99;
+        public override LocString Description => CardSelectorPrefs.UpgradeSelectionPrompt;
+        public override bool IsPopulated => true;
+        protected override string IconPath => ImageHelper.GetImagePath("ui/reward_screen/reward_icon_special_card.png");
+
+        public override Task Populate()
+        {
+            return Task.CompletedTask;
+        }
+
+        protected override async Task<bool> OnSelect()
+        {
+            var cards = await CardSelectCmd.FromDeckForUpgrade(Player, new CardSelectorPrefs(CardSelectorPrefs.UpgradeSelectionPrompt, 1));
+            CardCmd.Upgrade(cards, MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle.GridLayout);
+            return true;
+        }
+
+        public override SerializableReward ToSerializable()
+        {
+            return new SerializableReward
+            {
+                RewardType = RewardType.None,
+                PredeterminedModelId = UpgradeCardRewardSaveId,
+            };
+        }
+
+        public override void MarkContentAsSeen()
+        {
+        }
+    }
+
+    private sealed class MaxHpReward(Player player) : Reward(player)
+    {
+        protected override RewardType RewardType => RewardType.None;
+        public override int RewardsSetIndex => 100;
+        public override LocString Description
+        {
+            get
+            {
+                var description = new LocString("gameplay_ui", "EVENT_CHOICE_GAIN_MAX_HP");
+                description.Add("Amount", MaxHpAmount);
+                return description;
+            }
+        }
+        public override bool IsPopulated => true;
+        protected override string IconPath => ImageHelper.GetImagePath("ui/reward_screen/reward_icon_heal.png");
+
+        public override Task Populate()
+        {
+            return Task.CompletedTask;
+        }
+
+        protected override async Task<bool> OnSelect()
+        {
+            await CreatureCmd.GainMaxHp(Player.Creature, MaxHpAmount);
+            return true;
+        }
+
+        public override SerializableReward ToSerializable()
+        {
+            return new SerializableReward
+            {
+                RewardType = RewardType.None,
+                PredeterminedModelId = MaxHpRewardSaveId,
+            };
+        }
+
+        public override void MarkContentAsSeen()
+        {
+        }
+    }
+}
+
+[HarmonyPatch]
+public static class ExtraRewardDeserializationPatch
+{
+    static MethodBase? TargetMethod()
+    {
+        return AccessTools.Method(typeof(Reward), nameof(Reward.FromSerializable), new[] { typeof(SerializableReward), typeof(Player) });
+    }
+
+    static bool Prefix(SerializableReward save, Player player, ref Reward __result)
+    {
+        if (save == null || player == null)
+        {
+            return true;
+        }
+
+        if (ExtraRewardOptionsPatch.TryDeserializeExtraReward(save, player, out var reward))
+        {
+            __result = reward;
+            return false;
+        }
+
+        return true;
     }
 }
