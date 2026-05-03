@@ -88,7 +88,7 @@ dotnet build -c Release -p:GameDirWsl="/mnt/c/path/to/Slay the Spire 2"
 
 Mod 入口位于 `ModEntry.cs`：
 
-- `MainFile.Initialize()` 创建 Harmony 实例并对当前程序集执行 `PatchAll`。
+- `ModEntry.Initialize()` 创建 Harmony 实例并对当前程序集执行 `PatchAll`。
 - `StartingEnergyBonusPatch` 定位并补丁 `MegaCrit.Sts2.Core.Hooks.Hook.ModifyMaxEnergy`，在 Postfix 中将返回值增加 `1m`。
 - `ExtraRewardOptionsPatch` 定位并补丁 `MegaCrit.Sts2.Core.Hooks.Hook.ModifyRewards`，当房间类型为 `Elite` 或 `Boss` 时向奖励列表追加 1 个基于跑局和房间信息稳定选择的额外奖励选项。
 - 额外奖励目前使用游戏内置奖励类型：`RelicReward`、`GoldReward(100)` 和 `CardRemovalReward`。
@@ -108,6 +108,15 @@ sts2-better-reward.json
 - 作者：`STS2 Modder`
 - 版本：`v1.0.0`
 - 是否影响玩法：是
+
+## 更新日志
+
+### v1.0.1
+
+- 修复 `ExtraRewardOptionsPatch.Prefix` 中缺少空值检查导致的潜在崩溃问题
+- 统一类名 `MainFile` → `ModEntry`，与入口文件名保持一致
+- 修正 `TargetMethod()` 中的误导性日志文本
+- 关闭项目中未使用的 `AllowUnsafeBlocks` 编译开关
 
 ## 开源协议
 

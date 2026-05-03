@@ -12,7 +12,7 @@ using System.Reflection;
 namespace Sts2BetterReward;
 
 [ModInitializer(nameof(Initialize))]
-public partial class MainFile : Node
+public partial class ModEntry : Node
 {
     public const string ModId = "sts2-better-reward";
 
@@ -32,7 +32,7 @@ public static class StartingEnergyBonusPatch
         var hookType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Hooks.Hook");
         if (hookType == null)
         {
-            GD.PrintErr($"[{MainFile.ModId}] 找不到 Hook 类型");
+            GD.PrintErr($"[{ModEntry.ModId}] 找不到 Hook 类型");
             return null;
         }
 
@@ -40,18 +40,18 @@ public static class StartingEnergyBonusPatch
         var playerType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Entities.Players.Player");
         if (combatStateType == null || playerType == null)
         {
-            GD.PrintErr($"[{MainFile.ModId}] 找不到 CombatState 或 Player 类型");
+            GD.PrintErr($"[{ModEntry.ModId}] 找不到 CombatState 或 Player 类型");
             return null;
         }
 
         var method = AccessTools.Method(hookType, "ModifyMaxEnergy", new[] { combatStateType, playerType, typeof(decimal) });
         if (method == null)
         {
-            GD.PrintErr($"[{MainFile.ModId}] 找不到 Hook.ModifyMaxEnergy 方法");
+            GD.PrintErr($"[{ModEntry.ModId}] 找不到 Hook.ModifyMaxEnergy 方法");
             return null;
         }
 
-        GD.Print($"[{MainFile.ModId}] 已补丁 Hook.ModifyMaxEnergy");
+        GD.Print($"[{ModEntry.ModId}] 已找到 Hook.ModifyMaxEnergy 目标方法");
         return method;
     }
 
@@ -71,37 +71,42 @@ public static class ExtraRewardOptionsPatch
         var hookType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Hooks.Hook");
         if (hookType == null)
         {
-            GD.PrintErr($"[{MainFile.ModId}] 找不到 Hook 类型");
+            GD.PrintErr($"[{ModEntry.ModId}] 找不到 Hook 类型");
             return null;
         }
 
         var runStateType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Runs.IRunState");
         if (runStateType == null)
         {
-            GD.PrintErr($"[{MainFile.ModId}] 找不到 IRunState 类型");
+            GD.PrintErr($"[{ModEntry.ModId}] 找不到 IRunState 类型");
             return null;
         }
 
         var method = AccessTools.Method(hookType, "ModifyRewards", new[] { runStateType, typeof(Player), typeof(List<Reward>), typeof(AbstractRoom) });
         if (method == null)
         {
-            GD.PrintErr($"[{MainFile.ModId}] 找不到 Hook.ModifyRewards 方法");
+            GD.PrintErr($"[{ModEntry.ModId}] 找不到 Hook.ModifyRewards 方法");
             return null;
         }
 
-        GD.Print($"[{MainFile.ModId}] 已补丁 Hook.ModifyRewards");
+        GD.Print($"[{ModEntry.ModId}] 已找到 Hook.ModifyRewards 目标方法");
         return method;
     }
 
     static void Prefix(IRunState runState, Player player, List<Reward> rewards, AbstractRoom room)
     {
+        if (room == null || runState?.Rng == null || player == null || rewards == null)
+        {
+            return;
+        }
+
         if (room.RoomType != RoomType.Elite && room.RoomType != RoomType.Boss)
         {
             return;
         }
 
         rewards.Add(CreateExtraReward(runState, player, room));
-        GD.Print($"[{MainFile.ModId}] {GetRoomName(room.RoomType)}奖励已追加 1 个额外奖励选项");
+        GD.Print($"[{ModEntry.ModId}] {GetRoomName(room.RoomType)}奖励已追加 1 个额外奖励选项");
     }
 
     private static Reward CreateExtraReward(IRunState runState, Player player, AbstractRoom room)
@@ -117,7 +122,7 @@ public static class ExtraRewardOptionsPatch
     private static int GetStableRewardKind(IRunState runState, AbstractRoom room)
     {
         var hash = 2166136261u;
-        hash = AddHash(hash, MainFile.ModId);
+        hash = AddHash(hash, ModEntry.ModId);
         hash = AddHash(hash, runState.Rng.Seed);
         hash = AddHash(hash, runState.CurrentActIndex);
         hash = AddHash(hash, runState.TotalFloor);

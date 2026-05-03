@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>sts2-better-reward</AssemblyName>
     <RootNamespace>Sts2BetterReward</RootNamespace>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <!-- 禁用架构不匹配警告 -->
     <NoWarn>$(NoWarn);MSB3270</NoWarn>
     <!-- 禁用 SDK 自动生成 AssemblyInfo，避免与 Godot 缓存冲突 -->
